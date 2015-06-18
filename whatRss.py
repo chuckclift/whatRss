@@ -5,7 +5,6 @@ import threading
 from queue import Queue
 import time
 import requests
-import re
 import htmlParser
 
 class rssArticle:
@@ -39,17 +38,17 @@ class downloadThread(Thread):
 
             # trying to get a new site to retreive
             # information from 
-            with urlLock:  
-                if not urlQueue.empty():
-                    currentUrl = urlQueue.get()
+            with url_queue_lock:  
+                if not url_queue.empty():
+                    current_url = url_queue.get()
                 else:
                     # if there are no sites left in the queue, this 
                     # will break the main while loop, ending this
                     # thread
                     break
 
-            homeHtml = requests.get(currentUrl).text
-            items = homeHtml.split("<item>")
+            home_html = requests.get(current_url).text
+            items = home_html.split("<item>")
             items = items[1:]
             articles = []
  
@@ -60,60 +59,65 @@ class downloadThread(Thread):
                 articles.append(ar)
    
             for a in articles:
-                articleHtml = requests.get(a.get_url()).text
-                articleText = htmlParser.get_paragraphs(articleHtml)
+                article_html = requests.get(a.get_url()).text
+                articleText = htmlParser.get_paragraphs(article_html)
                 a.set_text(articleText)
                 time.sleep(3)
 
-            with listLock:
+            with article_list_lock:
                 articleList.extend(articles) 
 
-#setting the number of threads
-THREAD_COUNT = 6
+
+if __name__ == "__main__":
+    #setting the number of threads
+    THREAD_COUNT = 6
 
 
-#retreiving urls from text file        
-with open("url.txt") as f:
-    urlList = f.read().split("\n")
-    urlList = [x.strip() for x in urlList if len(x) > 0]
+    #retreiving urls from text file        
+    with open("url.txt") as f:
+        rss_page_urls = f.read().split("\n")
+        rss_page_urls = [x.strip() for x in rss_page_urls if len(x) > 0]
  
-# a list with all of the threads for joining them later on
-threadList = [] 
-listLock = threading.Lock()
-urlLock = threading.Lock()
-  
-urlQueue = Queue(len(urlList))
+    # a list with all of the threads for joining them later on
+    article_list_lock = threading.Lock()
+    articleList = []
 
-#filling queue with urls from file
-for url in urlList:
-    urlQueue.put(url)
+
+    url_queue_lock = threading.Lock()
+    url_queue = Queue(len(rss_page_urls))
+
+    #filling queue with urls from file
+    for i in rss_page_urls:
+        url_queue.put(i)
  
-#this will hold all of the contents taken from the articles
-articleList = []
+    # this will hold all of the contents taken from the articles
  
-# starting threads
-for i in range(THREAD_COUNT):
-    thread = downloadThread()
-    thread.start()
-    threadList.append(thread)
+    getter_threads = [] 
+    # starting threads
+    for i in range(THREAD_COUNT):
+        thread = downloadThread()
+        thread.start()
+        getter_threads.append(thread)
 
-# waiting for thread to be finished
-for name in threadList:
-    name.join() 
+    # waiting for thread to be finished
+    for name in getter_threads:
+        name.join() 
 
-headlineText = ""
-contentText = "" 
-for i in articleList:
-    headlineText = headlineText + i.get_title() + "\n"
-    contentText = contentText + "<title>" + i.get_title() + ("</title>" + "\n" 
-                  + "<article>" + i.get_text() + "</article>" + "\n")
+    headlines = ""
+    article_text = "" 
+    for i in articleList:
+        headlines = headlines + i.get_title() + "\n"
+
+        title_block = "<item>\n<title>" + i.get_title() + "</title>" + "\n"
+        content_block = "<article>" + i.get_text() + "\n</article>\n</item>\n"
+        article_text = article_text + title_block + content_block
 
     
-#writing results to their respective files
-with open("headline.txt", "w") as h:
-    h.write(headlineText)
-with open("content.txt", "w") as c:
-    c.write(contentText)
+    #writing results to their respective files
+    with open("headline.txt", "w") as h:
+        h.write(headlines)
+    with open("content.txt", "w") as c:
+        c.write(article_text)
 
 
 
